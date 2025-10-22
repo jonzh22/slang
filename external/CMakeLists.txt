@@ -45,7 +45,9 @@ endif()
 
 if(fmt_FOUND)
   get_target_property(FMT_CFG fmt::fmt IMPORTED_CONFIGURATIONS)
-  get_target_property(FMT_LIB fmt::fmt IMPORTED_LOCATION_${FMT_CFG})
+  # Fix: FMT_CFG might be a list, take the first configuration
+  list(GET FMT_CFG 0 FMT_CFG_FIRST)
+  get_target_property(FMT_LIB fmt::fmt IMPORTED_LOCATION_${FMT_CFG_FIRST})
   get_target_property(FMT_INC fmt::fmt INTERFACE_INCLUDE_DIRECTORIES)
   message(STATUS "Found system fmt library: ${FMT_LIB}")
   message(STATUS "Using system fmt include: ${FMT_INC}")
