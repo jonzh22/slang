@@ -145,7 +145,7 @@ if(SLANG_USE_MIMALLOC)
           "${CMAKE_INSTALL_INCLUDEDIR}/mimalloc-${mi_version}")
 
       target_include_directories(
-        mimalloc-static SYSTEM PUBLIC $<BUILD_INTERFACE:${lib_include_dirs}>
+        mimalloc-static SYSTEM PUBLIC "$<BUILD_INTERFACE:${lib_include_dirs}>"
                                       $<INSTALL_INTERFACE:${mi_install_incdir}>)
     endif()
   endif()
