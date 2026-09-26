@@ -133,7 +133,7 @@ Expression& Expression::buildPackedSelectTree(const TypeProvider& typeProvider, 
             auto& rightExpr = ElementSelectExpression::fromConstant(typeProvider, expr,
                                                                     getIndex(rightElem), context);
             parts.push_back(&buildPackedSelectTree(typeProvider, rightExpr,
-                                                   {elemWidth - 1, elemWidth - localLsb}, context));
+                                                   {elemWidth - 1, localLsb}, context));
         }
 
         return createConcat(parts);
@@ -273,7 +273,7 @@ Expression* Expression::tryConnectPortArray(const ASTContext& context, const Typ
     int32_t offset = 0;
     for (size_t i = 0; i < arrayPath.size(); i++) {
         if (i > 0)
-            offset *= int32_t(instanceDims[i - 1].width());
+            offset *= int32_t(instanceDims[i].width());
 
         uint32_t index = arrayPath[i];
         if (!instanceDims[i].isLittleEndian())
@@ -1453,7 +1453,11 @@ Expression& StructuredAssignmentPatternExpression::forFixedArray(
     std::optional<const Expression*> cachedVal;
     auto arrayRange = type.getFixedRange();
 
-    for (int32_t i = arrayRange.lower(); i <= arrayRange.upper(); i++) {
+    // Aggregate elements are stored in declaration order, regardless of the
+    // numeric ordering of the index keys. Widen the arithmetic at range limits.
+    const int64_t step = arrayRange.isLittleEndian() ? -1 : 1;
+    for (uint64_t offset = 0; offset < arrayRange.width(); offset++) {
+        const auto i = int32_t(int64_t(arrayRange.left) + int64_t(offset) * step);
         // If we already have a setter for this index we don't have to do anything else.
         if (auto it = indexMap.find(i); it != indexMap.end()) {
             elements.push_back(it->second);

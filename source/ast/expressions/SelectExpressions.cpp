@@ -253,6 +253,13 @@ ConstantValue ElementSelectExpression::evalImpl(EvalContext& context) const {
 
     // Handling for strings, dynamic arrays, and queues.
     SLANG_ASSERT(range->left == range->right);
+    // The index evaluator allows one past the end of a queue for lvalue
+    // insertion. A read at that position still returns the element default.
+    if (cv.isQueue() && size_t(range->left) == cv.size()) {
+        context.addDiag(diag::ConstEvalDynamicArrayIndex, sourceRange)
+            << SVInt(range->left) << valType << cv.size();
+        return type->getDefaultValue();
+    }
     if (valType.isString())
         return cv.getSlice(range->left, range->right, nullptr);
 

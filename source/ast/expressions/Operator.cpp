@@ -330,22 +330,35 @@ ConstantValue OpInfo::eval(BinaryOperator op, const ConstantValue& cvl, const Co
             return evalLogicalOp(op, (bool)l, (bool)cvr.real());
     }
     else if (cvl.isContainer()) {
+        const bool negate = op == BinaryOperator::Inequality ||
+                            op == BinaryOperator::CaseInequality;
+        const auto elementOp = op == BinaryOperator::Inequality ? BinaryOperator::Equality
+                               : op == BinaryOperator::CaseInequality
+                                   ? BinaryOperator::CaseEquality
+                                   : op;
         if (cvl.size() != cvr.size())
-            return SVInt(false);
+            return SVInt(negate);
 
+        logic_t equal{1};
         auto li = begin(cvl);
         auto ri = begin(cvr);
         for (; li != end(cvl); li++, ri++) {
-            ConstantValue result = eval(op, *li, *ri);
+            // Associative entries compare both their indices and values.
+            if (cvl.isMap() && li.key() != ri.key())
+                return SVInt(negate);
+
+            ConstantValue result = eval(elementOp, *li, *ri);
             if (!result)
                 return nullptr;
 
-            logic_t l = (logic_t)result.integer();
-            if (l.isUnknown() || !l)
-                return SVInt(l);
+            // A definite mismatch decides equality even if an earlier element
+            // was unknown. Negate the aggregate result, not each element.
+            equal = equal && (logic_t)result.integer();
+            if (!equal.isUnknown() && !equal)
+                return SVInt(negate);
         }
 
-        return SVInt(true);
+        return SVInt(negate ? !equal : equal);
     }
     else if (cvl.isString()) {
         auto& l = cvl.str();

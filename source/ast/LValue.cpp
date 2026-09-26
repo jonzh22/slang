@@ -73,6 +73,10 @@ ConstantValue LValue::load() const {
                         // idea what type this should be.
                         if (arg.index < 0 || result.unionVal()->activeMember != uint32_t(arg.index))
                             result = arg.defaultValue;
+                        else {
+                            ConstantValue temp(std::move(result.unionVal()->value));
+                            result = std::move(temp);
+                        }
                     }
                     else if (arg.index < 0 || size_t(arg.index) >= result.size()) {
                         result = arg.defaultValue;
@@ -193,14 +197,14 @@ void LValue::store(const ConstantValue& newValue) {
             dest[size_t(i)] = src[size_t(i - l)];
     }
     else {
-        int32_t l = range->lower();
-        int32_t u = range->upper();
+        int64_t l = range->lower();
+        int64_t u = range->upper();
 
         auto src = newValue.elements();
         auto dest = target->elements();
 
-        u = std::min(u, int32_t(dest.size()));
-        for (int32_t i = std::max(l, 0); i <= u; i++)
+        u = std::min(u, int64_t(dest.size()) - 1);
+        for (int64_t i = std::max<int64_t>(l, 0); i <= u; i++)
             dest[size_t(i)] = src[size_t(i - l)];
     }
 }

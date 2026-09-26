@@ -162,9 +162,11 @@ Statement& ConditionalStatement::fromSyntax(Compilation& comp,
 struct EvalConditionalVisitor {
     EvalContext& context;
     SmallVector<const Statement*> items;
+    bool checkUnique;
     bool bad = false;
 
-    EvalConditionalVisitor(EvalContext& context) : context(context), items() {}
+    EvalConditionalVisitor(EvalContext& context, bool checkUnique) :
+        context(context), items(), checkUnique(checkUnique) {}
 
     void visit(const ConditionalStatement& stmt) {
         bool matched = true;
@@ -183,12 +185,23 @@ struct EvalConditionalVisitor {
             }
         }
 
-        if (matched)
-            stmt.ifTrue.visit(*this);
+        if (bad)
+            return;
+
+        if (matched) {
+            // Select the branch itself; nested conditionals execute only after
+            // this chain has been checked, with their own checking mode.
+            items.push_back(&stmt.ifTrue);
+            if (!checkUnique)
+                return;
+        }
 
         if (stmt.ifFalse) {
-            if (ConditionalStatement::isKind(stmt.ifFalse->kind) || !matched)
-                stmt.ifFalse->visit(*this);
+            auto next = stmt.ifFalse->as_if<ConditionalStatement>();
+            if (next && next->check == UniquePriorityCheck::None)
+                next->visit(*this);
+            else if (items.empty())
+                items.push_back(stmt.ifFalse);
         }
     }
 
@@ -196,7 +209,8 @@ struct EvalConditionalVisitor {
 };
 
 ER ConditionalStatement::evalImpl(EvalContext& context) const {
-    EvalConditionalVisitor visitor(context);
+    bool unique = check == UniquePriorityCheck::Unique || check == UniquePriorityCheck::Unique0;
+    EvalConditionalVisitor visitor(context, unique);
     this->visit(visitor);
     if (visitor.bad)
         return ER::Fail;
@@ -210,7 +224,6 @@ ER ConditionalStatement::evalImpl(EvalContext& context) const {
         return ER::Success;
     }
 
-    bool unique = check == UniquePriorityCheck::Unique || check == UniquePriorityCheck::Unique0;
     if (unique && visitor.items.size() > 1) {
         auto& diag = context.addDiag(diag::ConstEvalIfItemsNotUnique,
                                      visitor.items[1]->sourceRange);

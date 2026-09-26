@@ -743,7 +743,7 @@ static TVal toIEEE754(SVInt value) {
             mantissa++;
         else {
             for (uint32_t i = word; i > 0; i--) {
-                if (value.getRawPtr()[word - 1] != 0) {
+                if (value.getRawPtr()[i - 1] != 0) {
                     mantissa++;
                     break;
                 }
