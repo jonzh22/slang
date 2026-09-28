@@ -38,9 +38,10 @@ Lexer::Lexer(SourceBuffer buffer, BumpAllocator& alloc, Diagnostics& diagnostics
 }
 
 Lexer::Lexer(BufferID bufferId, std::string_view source, const char* startPtr, BumpAllocator& alloc,
-             Diagnostics& diagnostics, SourceManager& sourceManager, LexerOptions options) :
+             Diagnostics& diagnostics, SourceManager& sourceManager, LexerOptions options,
+             size_t sourceOffset) :
     alloc(alloc), diagnostics(diagnostics), options(std::move(options)), bufferId(bufferId),
-    originalBegin(source.data()), sourceBuffer(startPtr),
+    sourceOffset(sourceOffset), originalBegin(source.data()), sourceBuffer(startPtr),
     sourceEnd(source.data() + source.length()), marker(nullptr), sourceManager(sourceManager) {
 
     ptrdiff_t count = sourceEnd - sourceBuffer;
@@ -213,12 +214,20 @@ void Lexer::splitTokens(BumpAllocator& alloc, Diagnostics& diagnostics,
     if (sourceManager.isMacroLoc(loc))
         loc = sourceManager.getOriginalLoc(loc);
 
-    auto sourceText = sourceManager.getSourceText(loc.buffer());
-    SLANG_ASSERT(!sourceText.empty());
+    // A pasted token owns newly allocated raw text but retains its left
+    // operand's location. An original-location edge can also lead to another
+    // expansion, which has no physical source text. Lex the token's actual
+    // spelling and report offsets relative to the same one-edge origin used
+    // for physical tokens; never mix pointers from these separate allocations.
+    auto raw = sourceToken.rawText();
+    SLANG_ASSERT(offset <= raw.size());
+    auto storage = reinterpret_cast<char*>(alloc.allocate(raw.size() + 1, 1));
+    raw.copy(storage, raw.size());
+    storage[raw.size()] = '\0';
+    std::string_view sourceText(storage, raw.size() + 1);
 
-    Lexer lexer{loc.buffer(),  sourceText,  sourceToken.rawText().substr(offset).data(),
-                alloc,         diagnostics, sourceManager,
-                LexerOptions{}};
+    Lexer lexer{loc.buffer(), sourceText, storage + offset, alloc, diagnostics, sourceManager,
+                LexerOptions{}, loc.offset()};
 
     size_t endOffset = loc.offset() + sourceToken.rawText().length();
     while (true) {
@@ -1319,7 +1328,7 @@ bool Lexer::tryApplyCommentHandler() {
     if (it2 == it->second.end())
         return false;
 
-    auto loc = [&] { return SourceLocation(bufferId, currentOffset()); };
+    auto loc = [&] { return SourceLocation(bufferId, sourceOffset + currentOffset()); };
 
     auto& handler = it2->second;
     switch (handler.kind) {
@@ -1605,7 +1614,7 @@ void Lexer::scanDisabledRegion(std::string_view firstWord, std::string_view seco
 
 template<typename... Args>
 Token Lexer::create(TokenKind kind, Args&&... args) {
-    SourceLocation location(bufferId, size_t(marker - originalBegin));
+    SourceLocation location(bufferId, sourceOffset + size_t(marker - originalBegin));
     return Token(alloc, kind, triviaBuffer.copy(alloc), lexeme(), location,
                  std::forward<Args>(args)...);
 }
@@ -1615,7 +1624,7 @@ void Lexer::addTrivia(TriviaKind kind) {
 }
 
 Diagnostic& Lexer::addDiag(DiagCode code, size_t offset) {
-    return diagnostics.add(code, SourceLocation(bufferId, offset));
+    return diagnostics.add(code, SourceLocation(bufferId, sourceOffset + offset));
 }
 
 size_t Lexer::currentOffset() const {

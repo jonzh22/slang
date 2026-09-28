@@ -1853,6 +1853,25 @@ TEST_CASE("Preproc stringify assertion regress GH #451") {
     preprocess(text);
 }
 
+TEST_CASE("Pasted escaped stringify preserves suffix through nested macros") {
+    auto text = R"(
+`define S(x) `"x``\n`";
+`define W(x) `S(x)
+module m;
+localparam string direct = `S(\n )
+localparam string nested = `W(\n )
+endmodule
+)";
+    auto expected = R"(
+module m;
+localparam string direct = "\n\n";
+localparam string nested = "\n\n";
+endmodule
+)";
+    CHECK(preprocess(text) == expected);
+    CHECK_DIAGNOSTICS_EMPTY;
+}
+
 TEST_CASE("Macro inside an escaped identifier") {
     auto& text = R"(
 `define MAKE_INST(NAME, SIG) \

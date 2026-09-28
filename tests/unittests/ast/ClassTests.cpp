@@ -2069,6 +2069,33 @@ endclass
     CHECK(diags[10].code == diag::MismatchStaticConstraint);
 }
 
+TEST_CASE("Randomize with bare this and qualified this handles") {
+    auto tree = SyntaxTree::fromText(R"(
+class Base;
+    rand int i;
+endclass
+class C extends Base;
+    function void check_this;
+        int ok;
+        ok = randomize() with { this != null; };
+    endfunction
+endclass
+module m;
+    C c;
+    int ok;
+    initial begin
+        ok = c.randomize() with { this != null; };
+        ok = c.randomize() with { this.i > 0; };
+        ok = c.randomize() with { this.super.i > 0; };
+    end
+endmodule
+)");
+
+    Compilation compilation;
+    compilation.addSyntaxTree(tree);
+    NO_COMPILATION_ERRORS;
+}
+
 TEST_CASE("Randomize 'with' clauses") {
     auto tree = SyntaxTree::fromText(R"(
 package p;

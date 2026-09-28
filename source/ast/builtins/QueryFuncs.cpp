@@ -211,7 +211,7 @@ public:
             // If the index is unknown, we don't know if they will select the associative array
             // or some other dimension. Use the index type if it's larger than a normal integer,
             // and otherwise just use an integer result type.
-            if (indexType->getBitWidth() > 32)
+            if (indexType && indexType->getBitWidth() > 32)
                 return *indexType;
         }
 

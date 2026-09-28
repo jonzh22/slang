@@ -362,6 +362,42 @@ endmodule
     CHECK(diags[15].code == diag::QueryOnAssociativeWildcard);
 }
 
+TEST_CASE("Array query with wildcard index and nonconstant dimension") {
+    auto tree = SyntaxTree::fromText(R"(
+module m;
+    function automatic int query(input int dim);
+        int a[*];
+        return $size(a, dim);
+    endfunction
+    localparam int result = query(2);
+endmodule
+)");
+
+    Compilation compilation;
+    compilation.addSyntaxTree(tree);
+    auto& result = compilation.getRoot().lookupName<ParameterSymbol>("m.result");
+    CHECK(result.getValue().integer() == 32);
+    NO_COMPILATION_ERRORS;
+}
+
+TEST_CASE("Array query still rejects selected wildcard dimension") {
+    auto tree = SyntaxTree::fromText(R"(
+module m;
+    function automatic int query(input int dim);
+        int a[*];
+        return $size(a, dim);
+    endfunction
+    localparam int result = query(1);
+endmodule
+)");
+
+    Compilation compilation;
+    compilation.addSyntaxTree(tree);
+    auto& diags = compilation.getAllDiagnostics();
+    REQUIRE(diags.size() == 1);
+    CHECK(diags[0].code == diag::QueryOnAssociativeWildcard);
+}
+
 TEST_CASE("$printtimescale, $timeunit, $timeprecision") {
     auto options = optionsFor(LanguageVersion::v1800_2023);
     auto tree = SyntaxTree::fromText(R"(

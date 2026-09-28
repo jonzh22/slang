@@ -1672,7 +1672,8 @@ bool Lookup::withinClassRandomize(const ASTContext& context, const NameSyntax& s
             if (!result.found)
                 result.found = findThisHandle(*context.scope, flags, name.range, result);
 
-            if (result.found && nameParts.back().kind == SyntaxKind::SuperHandle) {
+            if (result.found && !nameParts.empty() &&
+                nameParts.back().kind == SyntaxKind::SuperHandle) {
                 // Handle "this.super.whatever" the same as if the user had just
                 // written "super.whatever".
                 name = nameParts.back().name;

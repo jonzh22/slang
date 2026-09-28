@@ -11,6 +11,45 @@
 
 using LF = LexerFacts;
 
+TEST_CASE("Split transformed token storage preserves token and diagnostic origins") {
+    auto& sm = getSourceManager();
+    auto buffer = sm.assignText("       \\base ");
+    diagnostics.clear();
+    Lexer lexer(buffer, alloc, diagnostics, sm);
+    auto token = lexer.lex();
+    auto physical = token.location();
+    auto once = sm.createExpansionLoc(physical, token.range(), true);
+    auto twice = sm.createExpansionLoc(once, token.range(), true);
+    SourceLocation locations[] = {physical, once, twice};
+    SourceLocation bases[] = {physical, physical, once};
+    for (size_t depth = 0; depth < 3; depth++) {
+        SmallVector<Token> result;
+        auto input = token.withRawText(alloc, "\\base;7").withLocation(alloc, locations[depth]);
+        Lexer::splitTokens(alloc, diagnostics, sm, input, 5,
+                          LF::getDefaultKeywordVersion(LanguageVersion::Default), result);
+        REQUIRE(result.size() == 2);
+        CHECK(result[0].rawText() == ";");
+        CHECK(result[1].rawText() == "7");
+        CHECK(result[0].location() == bases[depth] + 5);
+        CHECK(result[1].location() == bases[depth] + 6);
+        CHECK_DIAGNOSTICS_EMPTY;
+
+        result.clear();
+        Lexer::splitTokens(alloc, diagnostics, sm, input, 7,
+                          LF::getDefaultKeywordVersion(LanguageVersion::Default), result);
+        CHECK(result.empty());
+        CHECK_DIAGNOSTICS_EMPTY;
+
+        input = token.withRawText(alloc, "\\base\x04").withLocation(alloc, locations[depth]);
+        Lexer::splitTokens(alloc, diagnostics, sm, input, 5,
+                          LF::getDefaultKeywordVersion(LanguageVersion::Default), result);
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(diagnostics[0].code == diag::NonPrintableChar);
+        CHECK(diagnostics[0].location == bases[depth] + 5);
+        diagnostics.clear();
+    }
+}
+
 TEST_CASE("Invalid chars") {
     auto& text = "\x04";
     Token token = lexToken(text);

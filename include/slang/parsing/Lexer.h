@@ -134,7 +134,8 @@ public:
 
 private:
     Lexer(BufferID bufferId, std::string_view source, const char* startPtr, BumpAllocator& alloc,
-          Diagnostics& diagnostics, SourceManager& sourceManager, LexerOptions options);
+          Diagnostics& diagnostics, SourceManager& sourceManager, LexerOptions options,
+          size_t sourceOffset = 0);
 
     Token lexToken(KeywordVersion keywordVersion);
     Token lexEscapeSequence(bool isMacroName);
@@ -196,6 +197,9 @@ private:
 
     // the source text and start and end pointers within it
     BufferID bufferId;
+    // Offset of originalBegin in the reported source buffer. Re-lexed token
+    // storage can be independent of that buffer's physical bytes.
+    size_t sourceOffset;
     const char* originalBegin;
     const char* sourceBuffer;
     const char* sourceEnd;
