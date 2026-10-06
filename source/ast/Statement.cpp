@@ -5,6 +5,7 @@
 // SPDX-FileCopyrightText: Michael Popoloski
 // SPDX-License-Identifier: MIT
 //------------------------------------------------------------------------------
+#include "slang/util/ResourceControl.h"
 #include "slang/ast/Statement.h"
 
 #include "slang/ast/ASTSerializer.h"
@@ -52,11 +53,13 @@ void InvalidStatement::serializeTo(ASTSerializer& serializer) const {
 }
 
 ER Statement::eval(EvalContext& context) const {
+    resource::work();
     EvalVisitor visitor;
     return visit(visitor, context);
 }
 
-Statement::StatementContext::~StatementContext() {
+Statement::StatementContext::~StatementContext() noexcept(false) {
+    if (std::uncaught_exceptions()) return;
     if (!lastEventControl.start()) {
         auto proc = rootAstContext.getProceduralBlock();
         if (proc && proc->procedureKind == ProceduralBlockKind::AlwaysFF && !proc->getBody().bad())

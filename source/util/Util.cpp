@@ -6,12 +6,78 @@
 // SPDX-License-Identifier: MIT
 //------------------------------------------------------------------------------
 #include "slang/util/Util.h"
+#include "slang/util/ResourceControl.h"
 
 #include <fmt/core.h>
 
 #if defined(SLANG_USE_MIMALLOC)
+#    include <mimalloc.h>
+namespace {
+void* admittedNew(size_t size) {
+    slang::resource::allocation(size);
+    return mi_new(size);
+}
+void* admittedNewNothrow(size_t size) noexcept {
+    try { slang::resource::allocation(size); }
+    catch (...) { return nullptr; }
+    return mi_new_nothrow(size);
+}
+void* admittedAlignedNew(size_t size, size_t alignment) {
+    slang::resource::allocation(size);
+    return mi_new_aligned(size, alignment);
+}
+void* admittedAlignedNewNothrow(size_t size, size_t alignment) noexcept {
+    try { slang::resource::allocation(size); }
+    catch (...) { return nullptr; }
+    return mi_new_aligned_nothrow(size, alignment);
+}
+}
+// Keep the existing backend, zero-size, alignment, new-handler and delete
+// contracts. Only the four allocation entry points gain an admission callback.
+#    define mi_new admittedNew
+#    define mi_new_nothrow admittedNewNothrow
+#    define mi_new_aligned admittedAlignedNew
+#    define mi_new_aligned_nothrow admittedAlignedNewNothrow
 #    include <mimalloc-new-delete.h>
+#    undef mi_new
+#    undef mi_new_nothrow
+#    undef mi_new_aligned
+#    undef mi_new_aligned_nothrow
 #endif
+
+namespace slang::resource {
+thread_local Control* activeControl = nullptr;
+
+void Control::charge(Kind kind, uint64_t amount) {
+    Scope callbackScope(nullptr);
+    std::lock_guard lock(mutex);
+    if (failure)
+        std::rethrow_exception(failure);
+    try {
+        if (callback)
+            callback(context, kind, amount);
+    }
+    catch (...) {
+        failure = std::current_exception();
+        throw;
+    }
+}
+
+void Control::check() {
+    Scope callbackScope(nullptr);
+    std::lock_guard lock(mutex);
+    if (failure)
+        std::rethrow_exception(failure);
+}
+
+bool allocationHookAvailable() noexcept {
+#if defined(SLANG_USE_MIMALLOC)
+    return true;
+#else
+    return false;
+#endif
+}
+} // namespace slang::resource
 
 namespace slang::assert {
 

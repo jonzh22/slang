@@ -5,6 +5,7 @@
 // SPDX-FileCopyrightText: Michael Popoloski
 // SPDX-License-Identifier: MIT
 //------------------------------------------------------------------------------
+#include <exception>
 #include "slang/ast/symbols/SymbolBuilders.h"
 
 #include "slang/ast/Compilation.h"
@@ -29,14 +30,11 @@ MethodBuilder::MethodBuilder(Compilation& compilation, std::string_view name,
 }
 
 MethodBuilder::MethodBuilder(MethodBuilder&& other) noexcept :
-    compilation(other.compilation), symbol(other.symbol) {
-    // Clear arguments in the other builder so that its destructor doesn't overwrite
-    // any arguments we may add from here on out.
-    args.append_range(other.args);
-    other.args.clear();
+    compilation(other.compilation), symbol(other.symbol), args(std::move(other.args)) {
 }
 
-MethodBuilder::~MethodBuilder() {
+MethodBuilder::~MethodBuilder() noexcept(false) {
+    if (std::uncaught_exceptions()) return;
     if (!args.empty())
         symbol.setArguments(args.copy(compilation));
 }

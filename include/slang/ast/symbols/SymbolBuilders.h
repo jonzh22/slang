@@ -26,7 +26,7 @@ public:
     /// Constructs a new method symbol with the given properties.
     MethodBuilder(Compilation& compilation, std::string_view name, const Type& returnType,
                   SubroutineKind kind = SubroutineKind::Function);
-    ~MethodBuilder();
+    ~MethodBuilder() noexcept(false);
 
     MethodBuilder(const MethodBuilder&) = delete;
     MethodBuilder(MethodBuilder&&) noexcept;

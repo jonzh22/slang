@@ -6,6 +6,8 @@
 // SPDX-License-Identifier: MIT
 //------------------------------------------------------------------------------
 #include "slang/util/OS.h"
+#include "slang/util/ResourceControl.h"
+#include "slang/util/ScopeGuard.h"
 
 #include <iostream>
 
@@ -87,6 +89,7 @@ bool OS::fileSupportsColors(FILE* file) {
 }
 
 std::error_code OS::readFile(const fs::path& path, SmallVector<char>& buffer) {
+    resource::work();
     HANDLE handle;
     auto& pathStr = path.native();
     const bool isStdin = pathStr == L"-";
@@ -111,6 +114,8 @@ std::error_code OS::readFile(const fs::path& path, SmallVector<char>& buffer) {
         }
     }
 
+    bool closed = false;
+    ScopeGuard release([&] { if (!isStdin && !closed) ::CloseHandle(handle); });
     std::error_code ec;
     DWORD fileType = ::GetFileType(handle);
     if (fileType == FILE_TYPE_DISK) {
@@ -124,8 +129,9 @@ std::error_code OS::readFile(const fs::path& path, SmallVector<char>& buffer) {
 
             char* buf = buffer.data();
             while (fileSize) {
-                DWORD bytesToRead = (DWORD)std::min(size_t(std::numeric_limits<DWORD>::max()),
+                DWORD bytesToRead = (DWORD)std::min(size_t(65536),
                                                     fileSize);
+                resource::work(bytesToRead);
                 DWORD bytesRead = 0;
                 if (!::ReadFile(handle, buf, bytesToRead, &bytesRead, NULL)) {
                     ec.assign(::GetLastError(), std::system_category());
@@ -153,6 +159,7 @@ std::error_code OS::readFile(const fs::path& path, SmallVector<char>& buffer) {
 
         size_t currSize = 0;
         while (true) {
+            resource::work(ChunkSize);
             buffer.resize_for_overwrite(currSize + ChunkSize + 1);
 
             DWORD bytesRead = 0;
@@ -172,6 +179,7 @@ std::error_code OS::readFile(const fs::path& path, SmallVector<char>& buffer) {
     }
 
     if (!isStdin) {
+        closed = true;
         if (!::CloseHandle(handle) && !ec)
             ec.assign(::GetLastError(), std::system_category());
     }
@@ -202,6 +210,7 @@ bool OS::fileSupportsColors(FILE* file) {
 }
 
 std::error_code OS::readFile(const fs::path& path, SmallVector<char>& buffer) {
+    resource::work();
     int fd;
     auto& pathStr = path.native();
     const bool isStdin = pathStr == "-";
@@ -220,6 +229,8 @@ std::error_code OS::readFile(const fs::path& path, SmallVector<char>& buffer) {
         }
     }
 
+    bool closed = false;
+    ScopeGuard release([&] { if (!isStdin && !closed) ::close(fd); });
     std::error_code ec;
     struct stat status;
     if (::fstat(fd, &status) != 0) {
@@ -231,7 +242,8 @@ std::error_code OS::readFile(const fs::path& path, SmallVector<char>& buffer) {
 
         char* buf = buffer.data();
         while (fileSize) {
-            size_t bytesToRead = std::min(fileSize, size_t(INT32_MAX));
+            size_t bytesToRead = std::min(fileSize, size_t(65536));
+            resource::work(bytesToRead);
             ssize_t numRead = ::read(fd, buf, bytesToRead);
             if (numRead < 0) {
                 if (errno == EINTR)
@@ -258,6 +270,7 @@ std::error_code OS::readFile(const fs::path& path, SmallVector<char>& buffer) {
 
         size_t currSize = 0;
         while (true) {
+            resource::work(ChunkSize);
             buffer.resize_for_overwrite(currSize + ChunkSize + 1);
 
             ssize_t numRead = ::read(fd, buffer.data() + currSize, ChunkSize);
@@ -279,6 +292,7 @@ std::error_code OS::readFile(const fs::path& path, SmallVector<char>& buffer) {
     }
 
     if (!isStdin) {
+        closed = true;
         if (::close(fd) < 0 && !ec)
             ec.assign(errno, std::generic_category());
     }

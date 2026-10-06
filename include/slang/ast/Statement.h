@@ -141,7 +141,7 @@ public:
         const ASTContext& rootAstContext;
 
         explicit StatementContext(const ASTContext& context) : rootAstContext(context) {}
-        ~StatementContext();
+        ~StatementContext() noexcept(false);
 
         /// Attempts to match up the head of the block list with the given
         /// statement syntax node. If they match, the block symbol is popped

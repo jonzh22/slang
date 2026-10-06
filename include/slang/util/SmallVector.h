@@ -622,10 +622,11 @@ public:
     SmallVector(const Base& other) : Base(N) { this->append(other.begin(), other.end()); }
 
     /// Move constructs from another vector.
-    SmallVector(SmallVector&& other) noexcept : SmallVector(static_cast<Base&&>(other)) {}
+    SmallVector(SmallVector&& other) noexcept(std::is_nothrow_move_constructible_v<T>) :
+        SmallVector(static_cast<Base&&>(other)) {}
 
     /// Move constructs from another vector.
-    SmallVector(Base&& other) noexcept {
+    SmallVector(Base&& other) {
         if (other.isSmall()) {
             this->cap = N;
             this->append(std::make_move_iterator(other.begin()),

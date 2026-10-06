@@ -5,6 +5,7 @@
 // SPDX-FileCopyrightText: Michael Popoloski
 // SPDX-License-Identifier: MIT
 //------------------------------------------------------------------------------
+#include "slang/util/ResourceControl.h"
 #include "slang/parsing/ParserBase.h"
 
 #include "slang/diagnostics/ParserDiags.h"
@@ -50,12 +51,14 @@ Diagnostic& ParserBase::addDiag(DiagCode code, SourceRange range) {
 }
 
 Token ParserBase::peek(uint32_t offset) {
+    resource::work();
     while (window.currentOffset + offset >= window.count)
         window.addNew();
     return window.buffer[window.currentOffset + offset];
 }
 
 Token ParserBase::peek() {
+    resource::work();
     if (!window.currentToken) {
         if (window.currentOffset >= window.count)
             window.addNew();
@@ -70,6 +73,7 @@ bool ParserBase::peek(TokenKind kind) {
 }
 
 Token ParserBase::consume() {
+    resource::work();
     auto result = peek();
     window.moveToNext();
     if (!skippedTokens.empty())

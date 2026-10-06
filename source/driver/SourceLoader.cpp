@@ -6,6 +6,7 @@
 // SPDX-License-Identifier: MIT
 //------------------------------------------------------------------------------
 #include "slang/driver/SourceLoader.h"
+#include "slang/util/ResourceControl.h"
 
 #include <BS_thread_pool.hpp>
 #include <fmt/core.h>
@@ -280,15 +281,47 @@ SourceLoader::SyntaxTreeList SourceLoader::loadAndParseSources(const Bag& option
         // the use of threads, do the parsing via a thread pool.
         BS::thread_pool<> threadPool(srcOptions.numThreads.value_or(0u));
 
+        // A worker borrows the same invocation controller. Detached task failures
+        // must be joined and rethrown; the pool does not transport them for us.
+        auto* resources = resource::activeControl;
+        auto runParallel = [&](size_t count, auto&& body) {
+            std::exception_ptr failure;
+            std::mutex failureMutex;
+            try {
+              threadPool.detach_loop(size_t(0), count, [&](size_t i) {
+                try {
+                    resource::Scope scope(resources);
+                    resource::work();
+                    body(i);
+                }
+                catch (...) {
+                    std::lock_guard lock(failureMutex);
+                    if (!failure)
+                        failure = std::current_exception();
+                }
+              });
+            }
+            catch (...) {
+                // Enqueuing itself can fail after publishing some tasks. Their
+                // captures remain alive until every already-enqueued task joins.
+                std::lock_guard lock(failureMutex);
+                if (!failure) failure = std::current_exception();
+            }
+            threadPool.wait();
+            if (failure)
+                std::rethrow_exception(failure);
+            if (resources)
+                resources->check();
+        };
+
         std::vector<LoadResult> loadResults;
         loadResults.resize(fileEntries.size());
 
         // Load all source files that were specified on the command line
         // or via library maps.
-        threadPool.detach_loop(size_t(0), fileEntries.size(), [&](size_t i) {
+        runParallel(fileEntries.size(), [&](size_t i) {
             loadResults[i] = loadAndParse(fileEntries[i], optionBag, srcOptions, i);
         });
-        threadPool.wait();
 
         for (auto&& result : loadResults)
             handleLoadResult(std::move(result));
@@ -305,11 +338,10 @@ SourceLoader::SyntaxTreeList SourceLoader::loadAndParseSources(const Bag& option
             const size_t numTrees = syntaxTrees.size();
             syntaxTrees.resize(numTrees + unitList.size());
 
-            threadPool.detach_loop(size_t(0), unitList.size(), [&](size_t i) {
+            runParallel(unitList.size(), [&](size_t i) {
                 syntaxTrees[i + numTrees] = parseSeparateUnit(*unitList[i]->first,
                                                               unitList[i]->second);
             });
-            threadPool.wait();
         }
 
         // If we deferred libraries due to wanting to inherit macros, parse them now.
@@ -317,13 +349,12 @@ SourceLoader::SyntaxTreeList SourceLoader::loadAndParseSources(const Bag& option
             const size_t numTrees = syntaxTrees.size();
             syntaxTrees.resize(numTrees + deferredLibBuffers.size());
 
-            threadPool.detach_loop(size_t(0), deferredLibBuffers.size(), [&](size_t i) {
+            runParallel(deferredLibBuffers.size(), [&](size_t i) {
                 auto tree = SyntaxTree::fromBuffer(deferredLibBuffers[i], sourceManager, optionBag,
                                                    inheritedMacros);
                 tree->isLibraryUnit = true;
                 syntaxTrees[i + numTrees] = std::move(tree);
             });
-            threadPool.wait();
         }
     }
     else {

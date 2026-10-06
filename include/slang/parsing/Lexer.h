@@ -7,6 +7,8 @@
 //------------------------------------------------------------------------------
 #pragma once
 
+#include "slang/util/ResourceControl.h"
+#include <algorithm>
 #include "slang/diagnostics/Diagnostics.h"
 #include "slang/parsing/LexerFacts.h"
 #include "slang/parsing/Token.h"
@@ -170,8 +172,19 @@ private:
 
     // source pointer manipulation
     void mark() { marker = sourceBuffer; }
-    void advance() { sourceBuffer++; }
-    void advance(int count) { sourceBuffer += count; }
+    // Prepay bounded lexical chunks; long comments / strings still poll even
+    // when they never produce a token. This is work admission, not a byte census.
+    uint64_t admittedLexicalBytes = 0;
+    void advance() { advance(1); }
+    void advance(int count) {
+        if (uint64_t(count) > admittedLexicalBytes) {
+            const auto allowance = std::max(uint64_t(4096), uint64_t(count));
+            resource::work(allowance);
+            admittedLexicalBytes = allowance;
+        }
+        admittedLexicalBytes -= uint64_t(count);
+        sourceBuffer += count;
+    }
     char peek() const { return *sourceBuffer; }
     char peek(int offset) const { return sourceBuffer[offset]; }
     size_t currentOffset() const;

@@ -5,6 +5,7 @@
 // SPDX-FileCopyrightText: Michael Popoloski
 // SPDX-License-Identifier: MIT
 //------------------------------------------------------------------------------
+#include "slang/util/ResourceControl.h"
 #include "slang/ast/Expression.h"
 
 #include "slang/ast/ASTSerializer.h"
@@ -511,11 +512,13 @@ const Expression& Expression::bindSelector(Expression& value, const ElementSelec
 }
 
 ConstantValue Expression::eval(EvalContext& context) const {
+    resource::work();
     EvalVisitor visitor;
     return visit(visitor, context);
 }
 
 LValue Expression::evalLValue(EvalContext& context) const {
+    resource::work();
     LValueVisitor visitor;
     return visit(visitor, context);
 }

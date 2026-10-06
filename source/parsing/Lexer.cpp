@@ -5,6 +5,7 @@
 // SPDX-FileCopyrightText: Michael Popoloski
 // SPDX-License-Identifier: MIT
 //------------------------------------------------------------------------------
+#include "slang/util/ResourceControl.h"
 #include "slang/parsing/Lexer.h"
 
 #include <cmath>
@@ -245,6 +246,7 @@ Token Lexer::lex() {
 }
 
 Token Lexer::lex(KeywordVersion keywordVersion) {
+    resource::work();
     triviaBuffer.clear();
     lexTrivia<false>();
 
@@ -1367,6 +1369,7 @@ bool Lexer::scanUTF8Char(bool alreadyErrored) {
 }
 
 bool Lexer::scanUTF8Char(bool alreadyErrored, uint32_t* code, int& computedLen) {
+    resource::work(4);
     int error;
     auto curr = sourceBuffer;
     if (sourceBuffer + 4 < sourceEnd) {
