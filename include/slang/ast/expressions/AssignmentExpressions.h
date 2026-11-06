@@ -361,13 +361,17 @@ class SLANG_EXPORT ReplicatedAssignmentPatternExpression final
 public:
     ReplicatedAssignmentPatternExpression(const Type& type, const Expression& count,
                                           std::span<const Expression* const> elements,
-                                          SourceRange sourceRange) :
+                                          SourceRange sourceRange, bool elementsExpanded = false) :
         AssignmentPatternExpressionBase(ExpressionKind::ReplicatedAssignmentPattern, type, elements,
                                         sourceRange),
-        count_(&count) {}
+        count_(&count), elementsExpanded_(elementsExpanded) {}
 
     /// @returns an expression indicating the number of times to replicate the pattern.
     const Expression& count() const { return *count_; }
+
+    /// True when heterogeneous struct destinations require a complete, ordered
+    /// element population instead of repeating the first contextual bindings.
+    bool elementsAreExpanded() const { return elementsExpanded_; }
 
     void serializeTo(ASTSerializer& serializer) const;
 
@@ -403,6 +407,7 @@ private:
                                            const ASTContext& context, size_t& count);
 
     const Expression* count_;
+    bool elementsExpanded_;
 };
 
 } // namespace slang::ast

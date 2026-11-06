@@ -1168,6 +1168,7 @@ bool SyntaxFacts::isNotInParameterList(TokenKind kind) {
 
 bool SyntaxFacts::isPossiblePropertyPortItem(TokenKind kind) {
     switch (kind) {
+        case TokenKind::UntypedKeyword:
         case TokenKind::OpenParenthesis:
         case TokenKind::LocalKeyword:
         case TokenKind::PropertyKeyword:

@@ -434,10 +434,9 @@ void TypePrinter::visit(const ErrorType&, std::string_view) {
 
 void TypePrinter::appendMembers(const Scope& scope) {
     buffer->append("{");
-    for (auto& member : scope.members()) {
-        auto& var = member.as<VariableSymbol>();
-        append(var.getType());
-        buffer->format(" {};", var.name);
+    for (auto& field : scope.membersOfType<FieldSymbol>()) {
+        append(field.getType());
+        buffer->format(" {};", field.name);
     }
     buffer->append("}");
 }

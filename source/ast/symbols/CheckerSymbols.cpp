@@ -385,7 +385,11 @@ CheckerInstanceSymbol& CheckerInstanceSymbol::fromSyntax(
             }
             else {
                 expr = port->defaultValueSyntax;
-                defValCtx.emplace(checker, LookupLocation::after(*port));
+                // Default syntax belongs to the declaration, but input port values
+                // belong to this instance's cloned formals and argument map.
+                // The body keeps the checker's lexical parent and declaration
+                // index; after this clone preserves prior / self / later lookup.
+                defValCtx.emplace(*body, LookupLocation::after(*actualArg));
                 defValCtx->assertionInstance = assertionDetails;
                 defValCtx->flags |= ASTFlags::AssertionDefaultArg;
                 argCtx = &defValCtx.value();
@@ -407,7 +411,8 @@ CheckerInstanceSymbol& CheckerInstanceSymbol::fromSyntax(
                 // if it has one.
                 if (isWildcard && port->defaultValueSyntax &&
                     port->direction == ArgumentDirection::In) {
-                    return port->defaultValueSyntax;
+                    setDefault({});
+                    return expr;
                 }
 
                 context.addDiag(diag::ImplicitNamedPortNotFound, range.get()) << port->name;

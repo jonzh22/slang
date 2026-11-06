@@ -888,13 +888,12 @@ Expression& Expression::bindAssignmentPattern(Compilation& comp,
 ConstantValue AssignmentPatternExpressionBase::evalImpl(EvalContext& context) const {
     size_t replCount = 1;
     if (kind == ExpressionKind::ReplicatedAssignmentPattern) {
-        auto countVal = as<ReplicatedAssignmentPatternExpression>()
-                            .count()
-                            .eval(context)
-                            .integer()
-                            .as<int32_t>();
+        const auto& pattern = as<ReplicatedAssignmentPatternExpression>();
+        auto countVal = pattern.count().eval(context).integer().as<int32_t>();
         SLANG_ASSERT(countVal >= 0);
-        replCount = size_t(*countVal);
+        // The count remains an original evaluated child. Heterogeneous struct
+        // elements already cover every destination slot in declaration order.
+        replCount = pattern.elementsAreExpanded() ? 1 : size_t(*countVal);
     }
 
     if (type->isIntegral()) {
@@ -965,6 +964,11 @@ ConstantValue AssignmentPatternExpressionBase::evalImpl(EvalContext& context) co
 
 bool AssignmentPatternExpressionBase::isEquivalentImpl(
     const AssignmentPatternExpressionBase& rhs) const {
+    if (kind == ExpressionKind::ReplicatedAssignmentPattern &&
+        as<ReplicatedAssignmentPatternExpression>().elementsAreExpanded() !=
+            rhs.as<ReplicatedAssignmentPatternExpression>().elementsAreExpanded()) {
+        return false;
+    }
     return std::ranges::equal(elements(), rhs.elements(),
                               [](const Expression* a, const Expression* b) {
                                   return a->isEquivalentTo(*b);
@@ -1605,6 +1609,16 @@ Expression& StructuredAssignmentPatternExpression::forAssociativeArray(
         }
     }
 
+    // The default has the same element assignment context and recursive
+    // fallback rules as other array patterns (IEEE 1800-2017 7.9.11, 10.9.1).
+    // Keep the original self-determined bind and all keyed setter requests in
+    // source order, then resolve the default without reevaluating any value.
+    if (defaultSetter && !defaultSetter->bad()) {
+        defaultSetter = matchElementValue(context, elementType, nullptr, sourceRange,
+                                          std::span<const TypeSetter>{}, defaultSetter);
+        bad |= !defaultSetter || defaultSetter->bad();
+    }
+
     auto result = comp.emplace<StructuredAssignmentPatternExpression>(
         type, std::span<const MemberSetter>{}, std::span<const TypeSetter>{},
         indexSetters.copy(comp), defaultSetter, std::span<const Expression*>{}, sourceRange);
@@ -1693,9 +1707,28 @@ Expression& ReplicatedAssignmentPatternExpression::forStruct(
         bad |= expr.bad();
     }
 
-    auto result = comp.emplace<ReplicatedAssignmentPatternExpression>(type, countExpr,
-                                                                      elems.copy(comp),
-                                                                      sourceRange);
+    // IEEE 1800-2017 10.9.2 assigns each replicated member expression in
+    // the context of its corresponding field. Reusing an expression narrowed
+    // for an earlier field loses width, sign, state, or nominal context.
+    // Keep existing homogeneous bound identities and their evaluation sharing.
+    SmallVector<const Expression*> expanded;
+    bool heterogeneous = false;
+    for (size_t slot = 0; slot < types.size(); slot++) {
+        const size_t item = slot % syntax.items.size();
+        if (slot < elems.size() || types[slot]->isMatching(*types[item])) {
+            expanded.push_back(elems[item]);
+        }
+        else {
+            auto& expr = Expression::bindRValue(*types[slot], *syntax.items[item], {}, context);
+            expanded.push_back(&expr);
+            bad |= expr.bad();
+            heterogeneous = true;
+        }
+    }
+
+    auto result = comp.emplace<ReplicatedAssignmentPatternExpression>(
+        type, countExpr, heterogeneous ? expanded.copy(comp) : elems.copy(comp), sourceRange,
+        heterogeneous);
     if (bad)
         return badExpr(comp, result);
 
@@ -1746,6 +1779,8 @@ Expression& ReplicatedAssignmentPatternExpression::forDynamicArray(
 
 void ReplicatedAssignmentPatternExpression::serializeTo(ASTSerializer& serializer) const {
     serializer.write("count", count());
+    if (elementsAreExpanded())
+        serializer.write("elementsExpanded", true);
     AssignmentPatternExpressionBase::serializeTo(serializer);
 }
 
