@@ -1736,22 +1736,72 @@ TEST_CASE("Array query functions") {
     NO_SESSION_ERRORS;
 }
 
-TEST_CASE("Static variables aren't initialized in consteval") {
+TEST_CASE("Constant function static initialization is local to each call") {
     ScriptSession session;
-
     session.eval(R"(
-function int foo;
-    static int j = 1;
-    return ++j;
+function int accumulate(input int amount);
+    static int accumulator = 1;
+    accumulator += amount;
+    return accumulator;
+endfunction
+function automatic int loop_static;
+    int result;
+    for (int i = 0; i < 3; i++) begin
+        static int counter = 1;
+        result = ++counter;
+    end
+    return result;
+endfunction
+function automatic int loop_automatic;
+    int result;
+    for (int i = 0; i < 3; i++) begin
+        automatic int counter = 1;
+        result = ++counter;
+    end
+    return result;
 endfunction
 )");
-    session.eval("localparam int i = foo();");
+    session.eval("localparam int a = accumulate(2), b = accumulate(3);");
+    session.eval("localparam int c = loop_static(), d = loop_static();");
+    session.eval("localparam int e = loop_automatic();");
+    CHECK(session.eval("a").integer() == 3);
+    CHECK(session.eval("b").integer() == 4);
+    CHECK(session.eval("c").integer() == 4);
+    CHECK(session.eval("d").integer() == 4);
+    CHECK(session.eval("e").integer() == 2);
+    NO_SESSION_ERRORS;
+}
 
-    CHECK(session.eval("i").integer() == 1);
-
-    auto diags = session.getDiagnostics();
-    REQUIRE(diags.size() == 1);
-    CHECK(diags[0].code == diag::ConstEvalStaticSkipped);
+TEST_CASE("Packed indexed select unknown bases read defaults and ignore writes") {
+    ScriptSession session;
+    session.eval(R"(
+function automatic logic [15:0] unknown_select(input logic [3:0] index);
+    bit [3:0] binary_word;
+    logic [3:0] logic_word;
+    binary_word = 4'b1010;
+    logic_word = 4'b1010;
+    return {binary_word[index+:4], binary_word[index-:4],
+            logic_word[index+:4], logic_word[index-:4]};
+endfunction
+function automatic logic [7:0] unknown_write(input logic [3:0] index);
+    bit [3:0] binary_word;
+    logic [3:0] logic_word;
+    binary_word = 4'b1010;
+    logic_word = 4'b0101;
+    binary_word[index+:2] = '1;
+    binary_word[index-:2] = '0;
+    logic_word[index+:2] = '0;
+    logic_word[index-:2] = '1;
+    return {binary_word, logic_word};
+endfunction
+)");
+    CHECK(session.eval("unknown_select(4'bxxxx) === 16'b00000000xxxxxxxx").isTrue());
+    CHECK(session.eval("unknown_select(4'bzzzz) === 16'b00000000xxxxxxxx").isTrue());
+    CHECK(session.eval("unknown_write(4'bxxxx)").integer() == 0xA5);
+    CHECK(session.eval("unknown_write(4'bzzzz)").integer() == 0xA5);
+    // Valid indexed writes must still take effect.
+    CHECK(session.eval("unknown_write(4'd1)").integer() == 0xC3);
+    NO_SESSION_ERRORS;
 }
 
 TEST_CASE("Complicated lvalue path") {

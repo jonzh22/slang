@@ -539,7 +539,8 @@ Expression& RangeSelectExpression::fromSyntax(Compilation& comp, Expression& val
 
             // If the lhs is a known constant, we can check that now too.
             ConstantValue leftVal;
-            if (!context.inUnevaluatedBranch() && (leftVal = context.tryEval(left))) {
+            if (!context.inUnevaluatedBranch() && (leftVal = context.tryEval(left)) &&
+                !(valueType.isIntegral() && leftVal.integer().hasUnknown())) {
                 std::optional<int32_t> index = leftVal.integer().as<int32_t>();
                 if (!index) {
                     auto& diag = context.addDiag(diag::IndexValueInvalid, left.sourceRange);
@@ -676,9 +677,10 @@ ConstantValue RangeSelectExpression::evalImpl(EvalContext& context) const {
     if (!cv)
         return nullptr;
 
-    auto range = evalRange(context, cv, /* enforceBounds */ false);
+    bool invalidIndex = false;
+    auto range = evalRange(context, cv, /* enforceBounds */ false, &invalidIndex);
     if (!range)
-        return nullptr;
+        return invalidIndex ? type->getDefaultValue() : ConstantValue();
 
     // If this is a queue, we didn't verify the endianness of the selection.
     // Check if it's reversed here and issue a warning if so.
@@ -700,9 +702,14 @@ LValue RangeSelectExpression::evalLValueImpl(EvalContext& context) const {
     if (!value().type->hasFixedRange())
         loadedVal = lval.load();
 
-    auto range = evalRange(context, loadedVal, /* enforceBounds */ false);
-    if (!range)
-        return nullptr;
+    bool invalidIndex = false;
+    auto range = evalRange(context, loadedVal, /* enforceBounds */ false, &invalidIndex);
+    if (!range) {
+        if (!invalidIndex)
+            return nullptr;
+        lval.addIndexOutOfBounds(type->getDefaultValue());
+        return lval;
+    }
 
     if (value().type->isIntegral())
         lval.addBitSlice(*range);
@@ -714,7 +721,11 @@ LValue RangeSelectExpression::evalLValueImpl(EvalContext& context) const {
 
 std::optional<ConstantRange> RangeSelectExpression::evalRange(EvalContext& context,
                                                               const ConstantValue& val,
-                                                              bool enforceBounds) const {
+                                                              bool enforceBounds,
+                                                              bool* invalidIndex) const {
+    if (invalidIndex)
+        *invalidIndex = false;
+
     auto prevQ = context.getQueueTarget();
     if (val.isQueue())
         context.setQueueTarget(&val);
@@ -729,6 +740,14 @@ std::optional<ConstantRange> RangeSelectExpression::evalRange(EvalContext& conte
     const Type& valueType = *value().type;
     std::optional<int32_t> li = cl.integer().as<int32_t>();
     std::optional<int32_t> ri = cr.integer().as<int32_t>();
+    // The width must still be a legal positive constant. Only the base of a
+    // packed indexed select can take this default-value / ignored-write path;
+    // ordinary ranges and invalid widths retain their diagnostics below.
+    if (invalidIndex && selectionKind != RangeSelectionKind::Simple &&
+        valueType.isIntegral() && cl.integer().hasUnknown() && ri && *ri > 0) {
+        *invalidIndex = true;
+        return std::nullopt;
+    }
     if (!li) {
         context.addDiag(diag::IndexValueInvalid, left().sourceRange) << cl << valueType;
         return std::nullopt;

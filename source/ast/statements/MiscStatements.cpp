@@ -61,12 +61,22 @@ void DisableStatement::serializeTo(ASTSerializer& serializer) const {
 }
 
 ER VariableDeclStatement::evalImpl(EvalContext& context) const {
+    // Each constant function call has a fresh frame. Static locals initialize once
+    // within that call, including when a declaration is revisited by a loop.
+    const bool functionLocal = context.inFunction() && context.topFrame().subroutine &&
+                               context.topFrame().subroutine->subroutineKind ==
+                                   SubroutineKind::Function;
+    if (functionLocal && symbol.lifetime == VariableLifetime::Static &&
+        context.findLocal(&symbol)) {
+        return ER::Success;
+    }
+
     // Figure out the initial value for the variable.
     ConstantValue initial;
     if (auto initializer = symbol.getInitializer()) {
-        // Initialization of static variables is skipped in constant functions.
-        // This is confusing so issue a warning.
-        if (symbol.lifetime == VariableLifetime::Static && !initializer->bad()) {
+        // Preserve the existing non-function script evaluation behavior.
+        if (!functionLocal && symbol.lifetime == VariableLifetime::Static &&
+            !initializer->bad()) {
             context.addDiag(diag::ConstEvalStaticSkipped, initializer->sourceRange);
         }
         else {

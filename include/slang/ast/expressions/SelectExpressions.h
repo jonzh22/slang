@@ -99,8 +99,11 @@ public:
                            bitmask<AssignFlags> flags) const;
     bool isEquivalentImpl(const RangeSelectExpression& rhs) const;
 
+    // When requested, distinguish a legal packed indexed select with an X/Z base
+    // from an invalid range. Its reads return the type default and writes do nothing.
     std::optional<ConstantRange> evalRange(EvalContext& context, const ConstantValue& val,
-                                           bool enforceBounds) const;
+                                           bool enforceBounds,
+                                           bool* invalidIndex = nullptr) const;
 
     void serializeTo(ASTSerializer& serializer) const;
 

@@ -2738,24 +2738,23 @@ endmodule
     compilation.addSyntaxTree(tree);
 
     auto& diags = compilation.getAllDiagnostics();
-    REQUIRE(diags.size() == 17);
+    REQUIRE(diags.size() == 16);
     CHECK(diags[0].code == diag::RangeSelectAssociative);
     CHECK(diags[1].code == diag::ExprMustBeIntegral);
     CHECK(diags[2].code == diag::ExprMustBeIntegral);
     CHECK(diags[3].code == diag::SelectEndianMismatch);
     CHECK(diags[4].code == diag::ValueMustBePositive);
     CHECK(diags[5].code == diag::RangeOOB);
-    CHECK(diags[6].code == diag::IndexValueInvalid);
-    CHECK(diags[7].code == diag::RangeWidthOOB);
-    CHECK(diags[8].code == diag::ConstEvalNonConstVariable);
-    CHECK(diags[9].code == diag::ValueMustBePositive);
-    CHECK(diags[10].code == diag::RangeOOB);
+    CHECK(diags[6].code == diag::RangeWidthOOB);
+    CHECK(diags[7].code == diag::ConstEvalNonConstVariable);
+    CHECK(diags[8].code == diag::ValueMustBePositive);
+    CHECK(diags[9].code == diag::RangeOOB);
+    CHECK(diags[10].code == diag::ConstEvalFunctionIdentifiersMustBeLocal);
     CHECK(diags[11].code == diag::ConstEvalFunctionIdentifiersMustBeLocal);
-    CHECK(diags[12].code == diag::ConstEvalFunctionIdentifiersMustBeLocal);
+    CHECK(diags[12].code == diag::IndexValueInvalid);
     CHECK(diags[13].code == diag::IndexValueInvalid);
     CHECK(diags[14].code == diag::IndexValueInvalid);
-    CHECK(diags[15].code == diag::IndexValueInvalid);
-    CHECK(diags[16].code == diag::ConstEvalDynamicArrayRange);
+    CHECK(diags[15].code == diag::ConstEvalDynamicArrayRange);
 }
 
 TEST_CASE("Index oob tryEval regress GH #602") {
